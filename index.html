@@ -498,36 +498,46 @@
       text-align: right;
     }
 
-    /* POPUP TANGKAPAN */
+    /* POPUP TANGKAPAN DI TENGAH DENGAN BACKGROUND TRANSPARAN */
     .catch-popup {
       position: fixed;
-      right: 18px;
-      bottom: 18px;
-      width: 340px;
-      max-width: calc(100vw - 28px);
-      background: #1e2235;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) scale(0.95);
+      width: 370px;
+      max-width: calc(100vw - 32px);
+      background: rgba(23, 26, 38, 0.74);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
       color: #fff;
-      border: 2px solid #c084fc;
-      border-radius: 16px;
-      padding: 12px;
+      border: 2px solid rgba(192, 132, 252, 0.85);
+      border-radius: 18px;
+      padding: 14px 16px;
       display: none;
-      gap: 10px;
+      gap: 12px;
       align-items: center;
       z-index: 999;
-      box-shadow: 0 14px 30px rgba(0,0,0,0.35);
+      pointer-events: none;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.35);
+      opacity: 0;
+      transition: opacity 0.2s ease, transform 0.2s ease;
     }
-    .catch-popup.show { display: flex; }
+    .catch-popup.show {
+      display: flex;
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
     .pop-img {
-      width: 58px;
-      height: 58px;
-      border-radius: 11px;
-      background: #12141e;
+      width: 62px;
+      height: 62px;
+      border-radius: 12px;
+      background: rgba(18, 20, 30, 0.65);
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
       flex-shrink: 0;
-      font-size: 24px;
+      font-size: 26px;
     }
     .pop-img img { width: 100%; height: 100%; object-fit: cover; }
 
@@ -635,7 +645,7 @@
         </div>
         <div class="cfg-line">
           <span style="font-size:11px;font-weight:700;">Poin Manual:</span>
-          <input type="text" id="manualPlayer" placeholder="Display Name..." style="width:140px;padding:3px 6px;font-size:11px;" />
+          <input type="text" id="manualPlayer" placeholder="Display Name / Username..." style="width:150px;padding:3px 6px;font-size:11px;" />
           <input type="number" id="manualPts" value="10" style="width:58px;padding:3px 6px;font-size:11px;text-align:right;" />
           <button type="button" id="btnAddManual" class="btn-resume" style="padding:3px 8px;font-size:11px;">+ Poin</button>
         </div>
@@ -692,10 +702,10 @@
   <div id="catchPopup" class="catch-popup">
     <div class="pop-img" id="popImg">🐟</div>
     <div style="flex:1;min-width:0;">
-      <div id="popPlayer" style="font-weight:900;font-size:13.5px;">-</div>
+      <div id="popPlayer" style="font-weight:900;font-size:14px;">-</div>
       <div id="popFish" style="font-size:12px;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">-</div>
-      <div id="popPts" style="font-weight:900;font-size:14.5px;color:#4ade80;">+0 pts</div>
-      <div id="popMeta" style="font-size:11px;color:#94a3b8;">Weight: - | Chance: -</div>
+      <div id="popPts" style="font-weight:900;font-size:15px;color:#4ade80;">+0 pts</div>
+      <div id="popMeta" style="font-size:11px;color:#cbd5e1;">Weight: - | Chance: -</div>
     </div>
   </div>
 
@@ -779,6 +789,34 @@
 
     let editingSeatIdx = null;
     let draftRoblox = null;
+
+    // Jaga karakter khusus seperti _, -, ., # tetap utuh; hanya rapikan kutip & spasi berlebih
+    function normalizeExactName(raw) {
+      return String(raw || "")
+        .replace(/^["']+|["']+$/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+    }
+
+    function getSeatKey(p) {
+      const base = (p && (p.displayName || p.username)) || "";
+      return normalizeExactName(base);
+    }
+
+    function matchSeatPlayer(rawName, seatList) {
+      const target = normalizeExactName(rawName);
+      if (!target) return null;
+      for (const p of seatList) {
+        if (!p) continue;
+        const dKey = normalizeExactName(p.displayName);
+        const uKey = normalizeExactName(p.username);
+        if (target === dKey || (uKey && target === uKey)) {
+          return p;
+        }
+      }
+      return null;
+    }
 
     function beep(freq = 660, dur = 0.12) {
       if (!voiceOn) return;
@@ -883,9 +921,12 @@
 
     function triggerPopup(item, pts) {
       if (timerState.status !== "RUNNING") return;
+      const matched = matchSeatPlayer(item.playerDisplay, seats);
+      if (!matched) return;
+
       const pop = document.getElementById("catchPopup");
       const imgWrap = document.getElementById("popImg");
-      document.getElementById("popPlayer").textContent = item.playerDisplay || "Player";
+      document.getElementById("popPlayer").textContent = matched.displayName || item.playerDisplay || "Player";
       document.getElementById("popFish").textContent =
         `${item.fishRaw || "Ikan"}${item.mutation && item.mutation !== "-" ? " • " + item.mutation : ""}`;
       document.getElementById("popPts").textContent = `+${pts} pts (${item.rarity || "-"})`;
@@ -1026,7 +1067,7 @@
       const usn = document.getElementById("inUsn").value.trim();
 
       let prof = draftRoblox && draftRoblox.status === "ok" ? draftRoblox : null;
-      if (usn && (!prof || prof.username.toLowerCase() !== usn.replace(/^@/, "").toLowerCase())) {
+      if (usn && (!prof || normalizeExactName(prof.username) !== normalizeExactName(usn))) {
         document.getElementById("prevDisplay").textContent = "Mengambil data...";
         const looked = await fetchRoblox(usn);
         prof = looked && looked.status === "ok" ? looked : null;
@@ -1037,7 +1078,7 @@
       }
 
       const prev = seats[editingSeatIdx] || {};
-      const cleanUsn = (prof && prof.username) || usn.replace(/^@/, "") || prev.username || "";
+      const cleanUsn = (prof && prof.username) || usn.replace(/^@/, "").trim() || prev.username || "";
       const resolvedDisplay = (prof && prof.displayName) || prev.displayName || cleanUsn || tt;
       const entry = {
         userId: (prof && prof.userId) || prev.userId || null,
@@ -1097,7 +1138,12 @@
       const name = document.getElementById("manualPlayer").value.trim();
       const addVal = Number(document.getElementById("manualPts").value);
       if (!name || Number.isNaN(addVal)) return;
-      const k = name.toLowerCase();
+      const matched = matchSeatPlayer(name, seats);
+      if (!matched) {
+        alert("Pemain tidak terdaftar di kursi. Masukkan pemain ke kursi terlebih dahulu.");
+        return;
+      }
+      const k = getSeatKey(matched);
       manualPoints[k] = (Number(manualPoints[k]) || 0) + addVal;
       await pushDb(`galtam/manualPoints/${encodeURIComponent(k)}`, manualPoints[k]);
       document.getElementById("manualPlayer").value = "";
@@ -1248,14 +1294,15 @@
       document.getElementById("seatSummary").textContent = `Terisi: ${filledCount}/${TOTAL_SEATS}`;
 
       const catchArr = Object.values(catches || {});
-      document.getElementById("catchSummary").textContent = `${catchArr.length} Tangkapan`;
-
       const map = new Map();
 
+      // Hanya masukkan pemain yang sudah terdaftar di kursi
       seats.forEach((p, idx) => {
         if (!p) return;
-        const key = (p.displayName || p.username).toLowerCase();
+        const key = getSeatKey(p);
+        if (!key) return;
         const fl = getFlag(key);
+        const mPts = Number(manualPoints[key]) || 0;
         map.set(key, {
           key,
           seatIdx: idx,
@@ -1267,61 +1314,31 @@
           userId: p.userId || null,
           paid: fl.paid,
           friended: fl.friended,
-          points: Number(manualPoints[key]) || 0,
+          points: mPts,
           catchesCount: 0,
           lastTs: p.joinedAt || 0
         });
       });
 
+      let validCatchesCount = 0;
+
+      // Hitung tangkapan hanya untuk pemain yang ada di kursi
       for (const c of catchArr) {
         if (!c) continue;
-        const pts = calcCatchPts(c);
-        const disp = (c.playerDisplay || "Unknown").trim();
-        const key = disp.toLowerCase();
-        if (!map.has(key)) {
-          const fl = getFlag(key);
-          map.set(key, {
-            key,
-            seatIdx: null,
-            displayName: disp,
-            username: "",
-            tiktokName: "",
-            avatarUrl: "",
-            fullBodyUrl: "",
-            userId: null,
-            paid: fl.paid,
-            friended: fl.friended,
-            points: Number(manualPoints[key]) || 0,
-            catchesCount: 0,
-            lastTs: 0
-          });
-        }
+        const matchedSeat = matchSeatPlayer(c.playerDisplay, seats);
+        if (!matchedSeat) continue;
+
+        const key = getSeatKey(matchedSeat);
         const entry = map.get(key);
-        entry.points += pts;
+        if (!entry) continue;
+
+        validCatchesCount += 1;
+        entry.points += calcCatchPts(c);
         entry.catchesCount += 1;
         entry.lastTs = Math.max(entry.lastTs, Number(c.timestamp) || 0);
       }
 
-      for (const [mk, mpts] of Object.entries(manualPoints || {})) {
-        if (!map.has(mk) && (Number(mpts) || 0) !== 0) {
-          const fl = getFlag(mk);
-          map.set(mk, {
-            key: mk,
-            seatIdx: null,
-            displayName: mk,
-            username: "",
-            tiktokName: "",
-            avatarUrl: "",
-            fullBodyUrl: "",
-            userId: null,
-            paid: fl.paid,
-            friended: fl.friended,
-            points: Number(mpts) || 0,
-            catchesCount: 0,
-            lastTs: 0
-          });
-        }
-      }
+      document.getElementById("catchSummary").textContent = `${validCatchesCount} Tangkapan`;
 
       const ranked = Array.from(map.values()).sort((a, b) => {
         if (b.points !== a.points) return b.points - a.points;
@@ -1531,7 +1548,7 @@
         if (root.playerFlags && typeof root.playerFlags === "object") {
           const nextFlags = {};
           for (const [k, fl] of Object.entries(root.playerFlags)) {
-            const decKey = decodeURIComponent(k).toLowerCase();
+            const decKey = normalizeExactName(decodeURIComponent(k));
             nextFlags[decKey] = {
               paid: fl && fl.paid === "OKE" ? "OKE" : "WAIT",
               friended: Boolean(fl && fl.friended)
@@ -1542,7 +1559,14 @@
           playerFlags = {};
         }
 
-        manualPoints = root.manualPoints || {};
+        const rawManual = root.manualPoints && typeof root.manualPoints === "object" ? root.manualPoints : {};
+        const nextManual = {};
+        for (const [mk, mpts] of Object.entries(rawManual)) {
+          const normKey = normalizeExactName(decodeURIComponent(mk));
+          if (normKey) nextManual[normKey] = (Number(nextManual[normKey]) || 0) + (Number(mpts) || 0);
+        }
+        manualPoints = nextManual;
+
         const nextCatches = root.catches || {};
         catches = nextCatches;
 
