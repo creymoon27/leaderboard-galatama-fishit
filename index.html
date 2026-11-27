@@ -926,67 +926,29 @@
       const usn = String(rawUsn || "").replace(/^@/, "").trim();
       if (!usn) return { status: "empty" };
 
-      let u = null;
-      const userHosts = ["https://users.roproxy.com", "https://users.roblox.com"];
-
-      for (const host of userHosts) {
-        try {
-          const postRes = await fetch(`${host}/v1/usernames/users`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ usernames: [usn], excludeBlocking: false })
-          });
-          if (postRes.ok) {
-            const postJson = await postRes.json();
-            if (postJson && Array.isArray(postJson.data)) {
-              if (postJson.data.length === 0) {
-                return { status: "not_found" };
-              }
-              u = postJson.data[0];
-              break;
-            }
-          }
-        } catch (_) {}
+      try {
+        const res = await fetch(`/.netlify/functions/roblox?username=${encodeURIComponent(usn)}`);
+        if (res.status === 404) {
+          return { status: "not_found" };
+        }
+        if (!res.ok) {
+          return { status: "error" };
+        }
+        const data = await res.json();
+        if (!data || data.status !== "ok" || !data.userId) {
+          return { status: data && data.status === "not_found" ? "not_found" : "error" };
+        }
+        return {
+          status: "ok",
+          userId: data.userId,
+          username: data.username,
+          displayName: data.displayName || data.username,
+          avatarUrl: data.avatarUrl || "",
+          fullBodyUrl: data.fullBodyUrl || data.avatarUrl || ""
+        };
+      } catch (_) {
+        return { status: "error" };
       }
-
-      if (!u || !u.id) {
-        return { status: "blocked_or_not_found" };
-      }
-
-      let avatarUrl = "";
-      let fullBodyUrl = "";
-      const thumbHosts = ["https://thumbnails.roproxy.com", "https://thumbnails.roblox.com"];
-
-      for (const tHost of thumbHosts) {
-        try {
-          const r1 = await fetch(
-            `${tHost}/v1/users/avatar-headshot?userIds=${u.id}&size=150x150&format=Png&isCircular=false`
-          );
-          if (r1.ok) {
-            const j1 = await r1.json();
-            avatarUrl = (j1 && j1.data && j1.data[0] && j1.data[0].imageUrl) || "";
-          }
-
-          const r2 = await fetch(
-            `${tHost}/v1/users/avatar?userIds=${u.id}&size=352x352&format=Png&isCircular=false`
-          );
-          if (r2.ok) {
-            const j2 = await r2.json();
-            fullBodyUrl = (j2 && j2.data && j2.data[0] && j2.data[0].imageUrl) || avatarUrl;
-          }
-
-          if (avatarUrl || fullBodyUrl) break;
-        } catch (_) {}
-      }
-
-      return {
-        status: "ok",
-        userId: u.id,
-        username: u.name,
-        displayName: u.displayName || u.name,
-        avatarUrl,
-        fullBodyUrl
-      };
     }
 
     function openSeatModal(idx, existing) {
