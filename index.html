@@ -1183,14 +1183,21 @@
       }
     }
 
+    async function pushTimerSync() {
+      await pushDb("galtam/timerStatus", timerState.status === "RUNNING" ? "RUNNING" : "PAUSED");
+      await pushDb("galtam/timerState", {
+        ...timerState,
+        updatedAt: Date.now()
+      });
+    }
+
     async function setTimerStatus(nextStatus) {
       timerState.status = nextStatus;
       if (nextStatus !== "RUNNING") {
         document.getElementById("catchPopup").classList.remove("show");
       }
       renderClock();
-      await pushDb("galtam/timerStatus", nextStatus === "RUNNING" ? "RUNNING" : "PAUSED");
-      await pushDb("galtam/timerState", timerState);
+      await pushTimerSync();
     }
 
     async function handleTimeExpired() {
@@ -1200,8 +1207,7 @@
       document.getElementById("catchPopup").classList.remove("show");
       renderClock();
       announceChampions(latestRanked);
-      await pushDb("galtam/timerStatus", "PAUSED");
-      await pushDb("galtam/timerState", timerState);
+      await pushTimerSync();
     }
 
     document.getElementById("btnSetClock").onclick = async () => {
@@ -1210,7 +1216,7 @@
       timerState.remainingSec = sec;
       if (timerState.status === "FINISHED") timerState.status = "IDLE";
       renderClock();
-      await pushDb("galtam/timerState", timerState);
+      await pushTimerSync();
     };
 
     document.getElementById("btnStart").onclick = () => {
@@ -1229,7 +1235,10 @@
       manualPoints = {};
       seenCatchIds.clear();
       prevSeatByKey.clear();
-      if (timerState.status === "FINISHED") timerState.status = "IDLE";
+      if (timerState.status === "FINISHED") {
+        timerState.status = "IDLE";
+        await pushTimerSync();
+      }
       await removeDb("galtam/catches");
       await removeDb("galtam/manualPoints");
       beep(460, 0.14);
@@ -1497,13 +1506,19 @@
       prevSeatByKey = nextSeatByKey;
     }
 
-    setInterval(() => {
+    setInterval(async () => {
       if (timerState.status === "RUNNING") {
         if (timerState.remainingSec > 1) {
           timerState.remainingSec -= 1;
           renderClock();
+          if (timerState.remainingSec % 5 === 0) {
+            await pushDb("galtam/timerState", {
+              ...timerState,
+              updatedAt: Date.now()
+            });
+          }
         } else {
-          handleTimeExpired();
+          await handleTimeExpired();
         }
       }
     }, 1000);
@@ -1518,13 +1533,32 @@
           return;
         }
 
-        if (initialSynced && timerState.status !== "FINISHED") {
-          if (root.timerStatus === "PAUSED" && timerState.status === "RUNNING") {
-            timerState.status = "PAUSED";
-            document.getElementById("catchPopup").classList.remove("show");
-          } else if (root.timerStatus === "RUNNING" && timerState.status === "PAUSED") {
-            timerState.status = "RUNNING";
+        if (root.timerState && typeof root.timerState === "object") {
+          const remoteStatus = root.timerState.status;
+          let remoteSec = Number(root.timerState.remainingSec);
+          if (Number.isNaN(remoteSec)) remoteSec = timerState.remainingSec;
+
+          if (remoteStatus === "RUNNING" && root.timerState.updatedAt) {
+            const elapsedSec = Math.max(0, Math.floor((Date.now() - Number(root.timerState.updatedAt)) / 1000));
+            remoteSec = Math.max(0, remoteSec - elapsedSec);
           }
+
+          if (remoteStatus === "FINISHED" || (remoteStatus === "RUNNING" && remoteSec <= 0)) {
+            timerState.status = "FINISHED";
+            timerState.remainingSec = 0;
+            document.getElementById("catchPopup").classList.remove("show");
+          } else if (remoteStatus === "RUNNING" || remoteStatus === "PAUSED" || remoteStatus === "IDLE") {
+            timerState.status = remoteStatus;
+            timerState.remainingSec = remoteSec;
+            if (remoteStatus !== "RUNNING") {
+              document.getElementById("catchPopup").classList.remove("show");
+            }
+          }
+        } else if (root.timerStatus === "PAUSED" && timerState.status === "RUNNING") {
+          timerState.status = "PAUSED";
+          document.getElementById("catchPopup").classList.remove("show");
+        } else if (root.timerStatus === "RUNNING" && timerState.status !== "RUNNING" && timerState.status !== "FINISHED") {
+          timerState.status = "RUNNING";
         }
 
         if (root.pointConfig || root.eventInfo) {
