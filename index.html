@@ -922,53 +922,78 @@
       document.getElementById("profileModal").classList.remove("show");
     };
 
-    async function fetchJsonWithFallback(url, options = {}) {
+    async function fetchJsonSafe(url, options = {}) {
       try {
-        const directRes = await fetch(url, options);
-        if (directRes.ok) return await directRes.json();
+        const res = await fetch(url, options);
+        if (res.ok) return await res.json();
       } catch (_) {}
 
-      const proxies = [
-        (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-        (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
-      ];
-
-      for (const makeProxyUrl of proxies) {
-        try {
-          const pRes = await fetch(makeProxyUrl(url), options);
-          if (pRes.ok) return await pRes.json();
-        } catch (_) {}
+      if (!options.method || options.method.toUpperCase() === "GET") {
+        const proxies = [
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+          `https://corsproxy.io/?${encodeURIComponent(url)}`
+        ];
+        for (const proxyUrl of proxies) {
+          try {
+            const pRes = await fetch(proxyUrl);
+            if (pRes.ok) return await pRes.json();
+          } catch (_) {}
+        }
       }
       return null;
     }
 
     async function fetchRoblox(rawUsn) {
       const usn = String(rawUsn || "").replace(/^@/, "").trim();
-      if (!usn) return null;
+      if (!usn) return { status: "empty" };
 
-      const data = await fetchJsonWithFallback("https://users.roblox.com/v1/usernames/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usernames: [usn], excludeBlocking: false })
-      });
+      let u = null;
+      try {
+        const postRes = await fetch("https://users.roblox.com/v1/usernames/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ usernames: [usn], excludeBlocking: false })
+        });
+        if (postRes.ok) {
+          const postJson = await postRes.json();
+          u = postJson && postJson.data && postJson.data[0] ? postJson.data[0] : null;
+        }
+      } catch (_) {}
 
-      const u = data && data.data && data.data[0];
-      if (!u) return null;
+      if (!u) {
+        const legacy = await fetchJsonSafe(
+          `https://api.roblox.com/users/get-by-username?username=${encodeURIComponent(usn)}`
+        );
+        if (legacy && legacy.Id) {
+          u = {
+            id: legacy.Id,
+            name: legacy.Username || usn,
+            displayName: legacy.DisplayName || legacy.Username || usn
+          };
+        } else if (legacy && legacy.success === false) {
+          return { status: "not_found" };
+        }
+      }
+
+      if (!u || !u.id) {
+        return { status: "blocked_or_not_found" };
+      }
 
       let avatarUrl = "";
       let fullBodyUrl = "";
 
-      const j1 = await fetchJsonWithFallback(
+      const j1 = await fetchJsonSafe(
         `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${u.id}&size=150x150&format=Png&isCircular=false`
       );
       avatarUrl = (j1 && j1.data && j1.data[0] && j1.data[0].imageUrl) || "";
 
-      const j2 = await fetchJsonWithFallback(
+      const j2 = await fetchJsonSafe(
         `https://thumbnails.roblox.com/v1/users/avatar?userIds=${u.id}&size=352x352&format=Png&isCircular=false`
       );
       fullBodyUrl = (j2 && j2.data && j2.data[0] && j2.data[0].imageUrl) || avatarUrl;
 
       return {
+        status: "ok",
         userId: u.id,
         username: u.name,
         displayName: u.displayName || u.name,
@@ -981,6 +1006,7 @@
       editingSeatIdx = idx;
       draftRoblox = existing
         ? {
+            status: "ok",
             userId: existing.userId,
             username: existing.username,
             displayName: existing.displayName,
@@ -1009,20 +1035,23 @@
       const usn = document.getElementById("inUsn").value.trim();
       if (!usn) return;
       document.getElementById("prevDisplay").textContent = "Mencari...";
-      const found = await fetchRoblox(usn);
-      if (!found) {
+      const res = await fetchRoblox(usn);
+      if (!res || res.status !== "ok") {
         draftRoblox = null;
-        document.getElementById("prevDisplay").textContent = "Tidak ditemukan";
+        document.getElementById("prevDisplay").textContent =
+          res && res.status === "not_found"
+            ? "Username tidak ada di Roblox"
+            : "Gagal mengambil data (cek ejaan / koneksi)";
         document.getElementById("prevUsn").textContent = `@${usn.replace(/^@/, "")}`;
         document.getElementById("prevBody").style.display = "none";
         return;
       }
-      draftRoblox = found;
-      document.getElementById("prevDisplay").textContent = found.displayName;
-      document.getElementById("prevUsn").textContent = `@${found.username}`;
+      draftRoblox = res;
+      document.getElementById("prevDisplay").textContent = res.displayName;
+      document.getElementById("prevUsn").textContent = `@${res.username}`;
       const pBody = document.getElementById("prevBody");
-      if (found.fullBodyUrl || found.avatarUrl) {
-        pBody.src = found.fullBodyUrl || found.avatarUrl;
+      if (res.fullBodyUrl || res.avatarUrl) {
+        pBody.src = res.fullBodyUrl || res.avatarUrl;
         pBody.style.display = "block";
       }
     };
@@ -1047,21 +1076,23 @@
       const tt = document.getElementById("inTiktok").value.trim();
       const usn = document.getElementById("inUsn").value.trim();
 
-      let prof = draftRoblox;
+      let prof = draftRoblox && draftRoblox.status === "ok" ? draftRoblox : null;
       if (usn && (!prof || prof.username.toLowerCase() !== usn.replace(/^@/, "").toLowerCase())) {
         document.getElementById("prevDisplay").textContent = "Mengambil data...";
-        prof = await fetchRoblox(usn);
+        const looked = await fetchRoblox(usn);
+        prof = looked && looked.status === "ok" ? looked : null;
       }
-      if (!prof && !tt) {
+      if (!prof && !tt && !usn) {
         alert("Isi Username Roblox atau Nama TikTok dulu.");
         return;
       }
 
       const prev = seats[editingSeatIdx] || {};
-      const resolvedDisplay = (prof && prof.displayName) || prev.displayName || tt || usn;
+      const cleanUsn = (prof && prof.username) || usn.replace(/^@/, "") || prev.username || "";
+      const resolvedDisplay = (prof && prof.displayName) || prev.displayName || cleanUsn || tt;
       const entry = {
         userId: (prof && prof.userId) || prev.userId || null,
-        username: (prof && prof.username) || usn.replace(/^@/, "") || prev.username || "",
+        username: cleanUsn,
         displayName: resolvedDisplay,
         tiktokName: tt,
         avatarUrl: (prof && prof.avatarUrl) || prev.avatarUrl || "",
