@@ -148,22 +148,12 @@
 
     .config-toggle-row {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-end;
       align-items: center;
       flex-wrap: wrap;
       gap: 8px;
       margin-top: 8px;
     }
-    .sync-pill {
-      font-size: 11px;
-      font-weight: 700;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: rgba(15, 23, 42, 0.65);
-      border: 1px solid var(--border-dark);
-      color: #94a3b8;
-    }
-    .sync-pill.online { color: #4ade80; border-color: rgba(74, 222, 128, 0.45); }
 
     .mini-config {
       display: none;
@@ -694,7 +684,6 @@
       </div>
 
       <div class="config-toggle-row">
-        <span id="fbSyncBadge" class="sync-pill">Mode Lokal (Cek Config Firebase)</span>
         <button type="button" id="btnToggleConfig">Pengaturan (Opsional)</button>
       </div>
 
@@ -947,6 +936,7 @@
     let startOverlayTimer = null;
     let finaleShownForSession = false;
     let lastCatchKeySeen = null;
+    let processedCatchIds = new Set();
     let catchQueue = [];
     let isShowingCatch = false;
 
@@ -1146,7 +1136,6 @@
       }
     }
 
-    // Lookup langsung via Netlify Function (/api/roblox-lookup) agar bebas blokir CORS & 403 proxy publik
     async function lookupRobloxProfile(username) {
       const clean = String(username || "").trim();
       if (!clean) return null;
@@ -1169,7 +1158,6 @@
         }
       } catch (_) {}
 
-      // Fallback GET lewat allorigins jika dijalankan tanpa Netlify Function
       try {
         const searchUrl = encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(clean)}&limit=10`);
         const d3 = await fetchJsonSafe(`https://api.allorigins.win/raw?url=${searchUrl}`, {}, 6500);
@@ -1675,6 +1663,7 @@
       }
 
       const finalName = (prof && prof.displayName) || usn || tt;
+      const seatNumber = editingIdx + 1;
       const payload = {
         displayName: finalName,
         tiktokName: tt,
@@ -1689,6 +1678,7 @@
       seatSlots[editingIdx] = payload;
       safeSetDb(`galatama/session/seats/${editingIdx}`, payload);
       document.getElementById("seatModal").classList.remove("show");
+      speakFriendly(`${finalName} terdaftar di kursi ${seatNumber}`);
       render();
     };
 
@@ -1811,18 +1801,16 @@
       }, 2800);
     }
 
-    if (firebaseReady && db) {
-      db.ref(".info/connected").on("value", (snap) => {
-        const badge = document.getElementById("fbSyncBadge");
-        if (snap.val() === true) {
-          badge.textContent = "Firebase: Terhubung";
-          badge.classList.add("online");
-        } else {
-          badge.textContent = "Firebase: Offline / Cek Config";
-          badge.classList.remove("online");
-        }
-      });
+    function enqueueCatchItem(key, val) {
+      if (!val || typeof val !== "object") return;
+      const dedupKey = key || `${val.player || ""}|${val.fish || ""}|${val.timestamp || val.ts || Date.now()}`;
+      if (processedCatchIds.has(dedupKey)) return;
+      processedCatchIds.add(dedupKey);
+      catchQueue.push(val);
+      processCatchQueue();
+    }
 
+    if (firebaseReady && db) {
       db.ref("galatama/session").on("value", (snap) => {
         const val = snap.val() || {};
         if (val.meta) {
@@ -1873,12 +1861,24 @@
         if (!val) return;
         if (lastCatchKeySeen === null) {
           lastCatchKeySeen = snap.key;
+          if (snap.key) processedCatchIds.add(snap.key);
           return;
         }
         if (snap.key === lastCatchKeySeen) return;
         lastCatchKeySeen = snap.key;
-        catchQueue.push(val);
-        processCatchQueue();
+        enqueueCatchItem(snap.key, val);
+      });
+
+      db.ref("galatama/latestCatch").on("value", (snap) => {
+        const val = snap.val();
+        if (!val) return;
+        const k = `latest|${val.player || ""}|${val.fish || ""}|${val.points || 0}|${val.timestamp || val.ts || ""}`;
+        if (!processedCatchIds.has("latest_init")) {
+          processedCatchIds.add("latest_init");
+          processedCatchIds.add(k);
+          return;
+        }
+        enqueueCatchItem(k, val);
       });
     }
 
