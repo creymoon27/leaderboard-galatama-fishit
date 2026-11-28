@@ -886,6 +886,7 @@
     const TOTAL_SEATS = 19;
     const LEFT_COUNT = 10;
     const MAX_ACTIVE_EVENTS = 5;
+    const STORAGE_RBX_CACHE_KEY = "galatama_rbx_profiles_v1";
 
     const EVENT_CATALOG = {
       meteor_shower: {
@@ -957,6 +958,31 @@
     const rbxCache = new Map();
     let rbxLookupTimer = null;
     let livePickedRobloxProfile = null;
+
+    function loadPersistedRbxCache() {
+      try {
+        const raw = localStorage.getItem(STORAGE_RBX_CACHE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === "object") {
+          Object.entries(obj).forEach(([k, v]) => {
+            if (v && v.found) rbxCache.set(k, v);
+          });
+        }
+      } catch (_) {}
+    }
+
+    function savePersistedRbxCache() {
+      try {
+        const obj = {};
+        rbxCache.forEach((v, k) => {
+          if (v && v.found) obj[k] = v;
+        });
+        localStorage.setItem(STORAGE_RBX_CACHE_KEY, JSON.stringify(obj));
+      } catch (_) {}
+    }
+
+    loadPersistedRbxCache();
 
     function resolveFriendlyVoice() {
       if (!("speechSynthesis" in window)) return null;
@@ -1129,57 +1155,87 @@
       );
     }
 
-    async function fetchJsonSafe(url, options = {}, timeoutMs = 6000) {
+    async function fetchJsonSafe(url, options = {}, timeoutMs = 6500) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
         const res = await fetch(url, { ...options, signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json();
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch (_) {
+          const wrapped = JSON.parse(text);
+          return wrapped && wrapped.contents ? JSON.parse(wrapped.contents) : null;
+        }
       } finally {
         clearTimeout(timer);
       }
+    }
+
+    function extractRobloxUserFromPayload(payload, fallbackUsername) {
+      if (!payload) return null;
+      const list = Array.isArray(payload.data) ? payload.data : (Array.isArray(payload) ? payload : []);
+      const u = list[0];
+      if (!u || !u.id) return null;
+      return {
+        id: u.id,
+        name: u.name || u.username || fallbackUsername,
+        displayName: u.displayName || u.name || u.username || fallbackUsername
+      };
     }
 
     async function resolveRobloxUserId(username) {
       const clean = String(username || "").trim();
       if (!clean) return null;
 
+      // 1. RoProxy POST
       try {
         const d1 = await fetchJsonSafe("https://users.roproxy.com/v1/usernames/users", {
           method: "POST",
           headers: { "Content-Type": "application/json", "Accept": "application/json" },
           body: JSON.stringify({ usernames: [clean], excludeBannedUsers: false })
         }, 5500);
-        const u1 = d1 && Array.isArray(d1.data) ? d1.data[0] : null;
-        if (u1 && u1.id) {
-          return {
-            id: u1.id,
-            name: u1.name || clean,
-            displayName: u1.displayName || u1.name || clean
-          };
-        }
+        const u1 = extractRobloxUserFromPayload(d1, clean);
+        if (u1) return u1;
       } catch (_) {}
 
+      // 2. AllOrigins / CorsProxy POST ke users.roblox.com
       const targetUrl = encodeURIComponent("https://users.roblox.com/v1/usernames/users");
-      const proxyUrls = [
+      const postProxies = [
         `https://api.allorigins.win/raw?url=${targetUrl}`,
         `https://corsproxy.io/?${targetUrl}`
       ];
 
-      for (const pUrl of proxyUrls) {
+      for (const pUrl of postProxies) {
         try {
           const d2 = await fetchJsonSafe(pUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Accept": "application/json" },
             body: JSON.stringify({ usernames: [clean], excludeBannedUsers: false })
-          }, 6000);
-          const u2 = d2 && Array.isArray(d2.data) ? d2.data[0] : null;
-          if (u2 && u2.id) {
+          }, 6500);
+          const u2 = extractRobloxUserFromPayload(d2, clean);
+          if (u2) return u2;
+        } catch (_) {}
+      }
+
+      // 3. Fallback GET lewat proxy (kadang GET lolos padahal POST diblokir)
+      const getTargets = [
+        encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(clean)}&limit=10`)
+      ];
+      for (const gUrl of getTargets) {
+        try {
+          const d3 = await fetchJsonSafe(`https://api.allorigins.win/raw?url=${gUrl}`, {}, 6500);
+          const list = Array.isArray(d3 && d3.data) ? d3.data : [];
+          const exact = list.find((item) =>
+            String(item.name || "").toLowerCase() === clean.toLowerCase() ||
+            String(item.displayName || "").toLowerCase() === clean.toLowerCase()
+          ) || list[0];
+          if (exact && exact.id) {
             return {
-              id: u2.id,
-              name: u2.name || clean,
-              displayName: u2.displayName || u2.name || clean
+              id: exact.id,
+              name: exact.name || clean,
+              displayName: exact.displayName || exact.name || clean
             };
           }
         } catch (_) {}
@@ -1218,7 +1274,7 @@
           const rbxBodyApi = encodeURIComponent(
             `https://thumbnails.roblox.com/v1/users/avatar?userIds=${userId}&size=352x352&format=Png&isCircular=false`
           );
-          const bAlt = await fetchJsonSafe(`https://api.allorigins.win/raw?url=${rbxBodyApi}`, {}, 6000);
+          const bAlt = await fetchJsonSafe(`https://api.allorigins.win/raw?url=${rbxBodyApi}`, {}, 6500);
           const candAlt = bAlt && bAlt.data && bAlt.data[0] && bAlt.data[0].imageUrl;
           if (candAlt) {
             bodyUrl = candAlt;
@@ -1258,6 +1314,7 @@
       };
 
       rbxCache.set(cacheKey, result);
+      savePersistedRbxCache();
       return result;
     }
 
@@ -1299,6 +1356,14 @@
         renderLiveRobloxPreview(null, false);
         return;
       }
+
+      const cached = rbxCache.get(val.toLowerCase());
+      if (cached && cached.found) {
+        livePickedRobloxProfile = cached;
+        renderLiveRobloxPreview(cached, false);
+        return;
+      }
+
       renderLiveRobloxPreview(livePickedRobloxProfile, true);
       rbxLookupTimer = setTimeout(async () => {
         const currentVal = document.getElementById("inUsn").value.trim();
