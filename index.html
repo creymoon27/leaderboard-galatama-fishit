@@ -836,6 +836,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
   <script>
+    // GANTI NILAI DI BAWAH INI DENGAN CONFIG FIREBASE KAMU
     const firebaseConfig = {
       apiKey: "API_KEY_KAMU",
       authDomain: "PROJECT_ID_KAMU.firebaseapp.com",
@@ -1280,8 +1281,9 @@
     }
 
     function computeEffectiveRemaining() {
-      if (timerState.status === "RUNNING" && timerState.endTimeMs) {
-        return Math.max(0, Math.ceil((timerState.endTimeMs - Date.now()) / 1000));
+      if (timerState.status === "RUNNING") {
+        const targetEnd = Number(timerState.endTimeMs) || (Date.now() + (Number(timerState.remainingSec) || 0) * 1000);
+        return Math.max(0, Math.ceil((targetEnd - Date.now()) / 1000));
       }
       return Math.max(0, Number(timerState.remainingSec) || 0);
     }
@@ -1707,11 +1709,12 @@
     };
 
     document.getElementById("btnStart").onclick = () => {
-      const rem = computeEffectiveRemaining() || 70 * 60;
+      const currentRem = computeEffectiveRemaining();
+      const rem = currentRem > 0 ? currentRem : (Number(timerState.durationSec) || 70 * 60);
       finaleShownForSession = false;
       timerState = {
         status: "RUNNING",
-        durationSec: rem,
+        durationSec: Number(timerState.durationSec) || rem,
         remainingSec: rem,
         endTimeMs: Date.now() + rem * 1000
       };
@@ -1831,6 +1834,9 @@
         }
         if (val.timer) {
           timerState = { ...timerState, ...val.timer };
+          if (timerState.status === "RUNNING") {
+            timerState.remainingSec = computeEffectiveRemaining();
+          }
         }
         totalCatches = Number(val.totalCatches) || 0;
 
@@ -1838,6 +1844,7 @@
         seatSlots = Array.from({ length: TOTAL_SEATS }, (_, idx) => rawSeats[idx] || null);
 
         const ranked = render();
+        renderClock();
         if (timerState.status === "FINISHED") openGrandFinale(ranked);
       });
 
@@ -1885,6 +1892,7 @@
     setInterval(() => {
       if (timerState.status === "RUNNING") {
         const rem = computeEffectiveRemaining();
+        timerState.remainingSec = rem;
         renderClock();
         checkCountdownAlerts(rem);
         if (rem <= 0) {
@@ -1893,7 +1901,7 @@
           openGrandFinale(render());
         }
       }
-    }, 1000);
+    }, 500);
 
     render();
   </script>
