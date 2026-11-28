@@ -848,17 +848,25 @@
   measurementId: "G-P0848XMX1E"
 };
 
-    let db = null;
-    let firebaseReady = false;
-    try {
-      const hasPlaceholder = String(firebaseConfig.apiKey || "").includes("AIzaSyCxGtuZJua000jKUKpXa-_0Z8AWVfs_MOQ") ||
-        String(firebaseConfig.databaseURL || "").includes("galtam-fishit");
-      if (!hasPlaceholder) {
-        firebase.initializeApp(firebaseConfig);
-        db = firebase.database();
-        firebaseReady = true;
-      }
-    } catch (_) {}
+let db = null;
+  let firebaseReady = false;
+  try {
+    const apiKeyStr = String(firebaseConfig.apiKey || "").trim();
+    const dbUrlStr = String(firebaseConfig.databaseURL || "").trim();
+    const isValidConfig =
+      apiKeyStr.length > 10 &&
+      !apiKeyStr.includes("API_KEY_KAMU") &&
+      dbUrlStr.startsWith("https://") &&
+      !dbUrlStr.includes("PROJECT_ID_KAMU");
+
+    if (isValidConfig) {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      firebaseReady = true;
+    }
+  } catch (err) {
+    console.error("[Firebase Init Error]", err);
+  }
 
     function safeSetDb(path, data) {
       if (!firebaseReady || !db) return;
