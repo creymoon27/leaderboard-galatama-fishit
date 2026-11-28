@@ -693,7 +693,7 @@
     }
     .pop-img img { width: 100%; height: 100%; object-fit: contain; }
 
-    /* OVERLAY LAYAR PENUH SELEBRASI AKHIR TOP 1-3 + ANIMASI TRANSISI MERIAH */
+    /* OVERLAY LAYAR PENUH SELEBRASI AKHIR TOP 1-3 */
     .grand-finale {
       position: fixed; inset: 0;
       background: radial-gradient(circle at 50% 25%, rgba(250, 204, 21, 0.28), rgba(126, 34, 206, 0.16), rgba(10, 13, 24, 0.97) 74%);
@@ -963,7 +963,7 @@
       </div>
       <div class="f-group">
         <label>Username Roblox</label>
-        <input type="text" id="inUsn" placeholder="Ketik username Roblox (contoh: Creymoon)..." />
+        <input type="text" id="inUsn" placeholder="Ketik username Roblox (contoh: Creymoon27)..." />
       </div>
 
       <div class="rbx-live-box">
@@ -1095,7 +1095,6 @@
     let speechDebounceTimer = null;
     let lastSpeakAt = 0;
 
-    // Cache lookup Roblox agar instan saat ketik ulang
     const rbxCache = new Map();
     let rbxLookupTimer = null;
     let livePickedRobloxProfile = null;
@@ -1297,14 +1296,94 @@
       );
     }
 
-    function fetchWithTimeout(url, options = {}, timeoutMs = 2800) {
+    async function fetchJsonSafe(url, options = {}, timeoutMs = 4500) {
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutMs);
-      return fetch(url, { ...options, signal: controller.signal })
-        .finally(() => clearTimeout(id));
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
-    // Lookup cepat Avatar Full Body & Display Name Roblox via RoProxy dengan cache & timeout
+    async function resolveRobloxUserId(username) {
+      try {
+        const d1 = await fetchJsonSafe("https://users.roproxy.com/v1/usernames/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ usernames: [username], excludeBannedUsers: false })
+        }, 4000);
+        if (d1 && d1.data && d1.data[0] && d1.data[0].id) {
+          return {
+            id: d1.data[0].id,
+            name: d1.data[0].name || username,
+            displayName: d1.data[0].displayName || d1.data[0].name || username
+          };
+        }
+      } catch (_) {}
+
+      const targetUrl = encodeURIComponent("https://users.roblox.com/v1/usernames/users");
+      const proxyUrls = [
+        `https://corsproxy.io/?${targetUrl}`,
+        `https://api.allorigins.win/raw?url=${targetUrl}`
+      ];
+
+      for (const pUrl of proxyUrls) {
+        try {
+          const d2 = await fetchJsonSafe(pUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ usernames: [username], excludeBannedUsers: false })
+          }, 4500);
+          if (d2 && d2.data && d2.data[0] && d2.data[0].id) {
+            return {
+              id: d2.data[0].id,
+              name: d2.data[0].name || username,
+              displayName: d2.data[0].displayName || d2.data[0].name || username
+            };
+          }
+        } catch (_) {}
+      }
+
+      return null;
+    }
+
+    async function resolveRobloxThumbnails(userId, fallbackLabel) {
+      let headUrl = fallbackAvatarSvg(fallbackLabel);
+      let bodyUrl = fallbackAvatarSvg(fallbackLabel);
+
+      try {
+        const [hJson, bJson] = await Promise.all([
+          fetchJsonSafe(`https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`, {}, 4000),
+          fetchJsonSafe(`https://thumbnails.roproxy.com/v1/users/avatar?userIds=${userId}&size=352x352&format=Png&isCircular=false`, {}, 4000)
+        ]);
+        if (hJson && hJson.data && hJson.data[0] && hJson.data[0].imageUrl) {
+          headUrl = hJson.data[0].imageUrl;
+        }
+        if (bJson && bJson.data && bJson.data[0] && bJson.data[0].imageUrl) {
+          bodyUrl = bJson.data[0].imageUrl;
+        }
+        if (!headUrl.startsWith("data:") || !bodyUrl.startsWith("data:")) {
+          return { headUrl, bodyUrl };
+        }
+      } catch (_) {}
+
+      try {
+        const rbxThumbUrl = encodeURIComponent(
+          `https://thumbnails.roblox.com/v1/users/avatar?userIds=${userId}&size=352x352&format=Png&isCircular=false`
+        );
+        const bFallback = await fetchJsonSafe(`https://corsproxy.io/?${rbxThumbUrl}`, {}, 4500);
+        if (bFallback && bFallback.data && bFallback.data[0] && bFallback.data[0].imageUrl) {
+          bodyUrl = bFallback.data[0].imageUrl;
+          if (headUrl.startsWith("data:")) headUrl = bodyUrl;
+        }
+      } catch (_) {}
+
+      return { headUrl, bodyUrl };
+    }
+
     async function lookupRobloxProfile(username) {
       const clean = String(username || "").trim();
       if (!clean) return null;
@@ -1313,61 +1392,29 @@
         return rbxCache.get(cacheKey);
       }
 
-      try {
-        const res = await fetchWithTimeout("https://users.roproxy.com/v1/usernames/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ usernames: [clean], excludeBannedUsers: false })
-        }, 2800);
-        const data = await res.json();
-        const user = data && data.data && data.data[0];
-        if (!user || !user.id) {
-          const fallback = {
-            username: clean,
-            displayName: clean,
-            avatarUrl: fallbackAvatarSvg(clean),
-            fullBodyUrl: fallbackAvatarSvg(clean),
-            found: false
-          };
-          rbxCache.set(cacheKey, fallback);
-          return fallback;
-        }
-
-        const uid = user.id;
-        let headUrl = fallbackAvatarSvg(user.name);
-        let bodyUrl = fallbackAvatarSvg(user.name);
-
-        try {
-          const [headRes, bodyRes] = await Promise.all([
-            fetchWithTimeout(`https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${uid}&size=150x150&format=Png&isCircular=false`, {}, 2600),
-            fetchWithTimeout(`https://thumbnails.roproxy.com/v1/users/avatar?userIds=${uid}&size=352x352&format=Png&isCircular=false`, {}, 2600)
-          ]);
-          const headJson = await headRes.json();
-          const bodyJson = await bodyRes.json();
-          if (headJson.data && headJson.data[0] && headJson.data[0].imageUrl) headUrl = headJson.data[0].imageUrl;
-          if (bodyJson.data && bodyJson.data[0] && bodyJson.data[0].imageUrl) bodyUrl = bodyJson.data[0].imageUrl;
-        } catch (_) {}
-
-        const result = {
-          userId: uid,
-          username: user.name || clean,
-          displayName: user.displayName || user.name || clean,
-          avatarUrl: headUrl,
-          fullBodyUrl: bodyUrl,
-          found: true
-        };
-        rbxCache.set(cacheKey, result);
-        return result;
-      } catch (_) {
-        const fallback = {
+      const foundUser = await resolveRobloxUserId(clean);
+      if (!foundUser) {
+        return {
           username: clean,
           displayName: clean,
           avatarUrl: fallbackAvatarSvg(clean),
           fullBodyUrl: fallbackAvatarSvg(clean),
           found: false
         };
-        return fallback;
       }
+
+      const thumbs = await resolveRobloxThumbnails(foundUser.id, foundUser.name);
+      const result = {
+        userId: foundUser.id,
+        username: foundUser.name,
+        displayName: foundUser.displayName,
+        avatarUrl: thumbs.headUrl,
+        fullBodyUrl: thumbs.bodyUrl,
+        found: true
+      };
+
+      rbxCache.set(cacheKey, result);
+      return result;
     }
 
     function renderLiveRobloxPreview(profile, loading = false) {
