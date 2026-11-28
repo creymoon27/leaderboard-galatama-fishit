@@ -838,20 +838,21 @@
   <script>
     // GANTI NILAI DI BAWAH INI DENGAN CONFIG FIREBASE KAMU
     const firebaseConfig = {
-      apiKey: "API_KEY_KAMU",
-      authDomain: "PROJECT_ID_KAMU.firebaseapp.com",
-      databaseURL: "https://PROJECT_ID_KAMU-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "PROJECT_ID_KAMU",
-      storageBucket: "PROJECT_ID_KAMU.appspot.com",
-      messagingSenderId: "SENDER_ID_KAMU",
-      appId: "APP_ID_KAMU"
-    };
+  apiKey: "AIzaSyCxGtuZJua000jKUKpXa-_0Z8AWVfs_MOQ",
+  authDomain: "galtam-fishit.firebaseapp.com",
+  databaseURL: "https://galtam-fishit-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "galtam-fishit",
+  storageBucket: "galtam-fishit.firebasestorage.app",
+  messagingSenderId: "260932450635",
+  appId: "1:260932450635:web:2374e63ab9469865b050ce",
+  measurementId: "G-P0848XMX1E"
+};
 
     let db = null;
     let firebaseReady = false;
     try {
-      const hasPlaceholder = String(firebaseConfig.apiKey || "").includes("API_KEY_KAMU") ||
-        String(firebaseConfig.databaseURL || "").includes("PROJECT_ID_KAMU");
+      const hasPlaceholder = String(firebaseConfig.apiKey || "").includes("AIzaSyCxGtuZJua000jKUKpXa-_0Z8AWVfs_MOQ") ||
+        String(firebaseConfig.databaseURL || "").includes("galtam-fishit");
       if (!hasPlaceholder) {
         firebase.initializeApp(firebaseConfig);
         db = firebase.database();
