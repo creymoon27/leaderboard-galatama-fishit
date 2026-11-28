@@ -21,7 +21,7 @@
       --seat-filled-border: #22c55e;
     }
 
-    * { box-sizing: border-box; }
+    *, *::before, *::after { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
@@ -121,14 +121,14 @@
     .st-pause { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid #f59e0b; }
     .st-end { background: rgba(244, 63, 94, 0.25); color: #fda4af; border: 1px solid #f43f5e; }
 
-    input, button {
+    input, select, button {
       font-family: inherit;
       border-radius: 10px;
       border: 1px solid var(--border-dark);
       padding: 6px 11px;
       font-size: 12px;
     }
-    input { background: #12141f; color: #f8fafc; }
+    input, select { background: #12141f; color: #f8fafc; }
     button {
       background: #323752;
       color: #f8fafc;
@@ -717,6 +717,31 @@
           <button type="button" id="btnAddManual" class="btn-resume" style="padding:3px 8px;font-size:11px;">+ Poin</button>
           <button type="button" id="btnSubManual" class="btn-reset" style="padding:3px 8px;font-size:11px;">- Poin</button>
         </div>
+
+        <div class="cfg-line">
+          <span class="cfg-chip"><label>Lokasi &amp; Server:</label></span>
+          <div class="player-picker-wrap">
+            <input type="text" id="locPlayerInput" placeholder="Pilih/ketik nama kursi..." style="width:155px;padding:3px 7px;font-size:11px;" />
+            <button type="button" id="btnPickLocPlayerArrow" class="arrow-pick-btn" title="Pilih pemain di kursi">▼</button>
+            <div id="locPlayerDropdown" class="player-dropdown"></div>
+          </div>
+          <select id="locPresetSelect" style="padding:3px 7px;font-size:11px;">
+            <option value="">-- Preset Lokasi --</option>
+            <option value="Throne Room">Throne Room</option>
+            <option value="Copper Canyon">Copper Canyon</option>
+            <option value="Copper Canyon Mines">Copper Canyon Mines</option>
+            <option value="Fisherman Island">Fisherman Island</option>
+            <option value="Lava Basin">Lava Basin</option>
+            <option value="Crystal Depths">Crystal Depths</option>
+            <option value="Sisyphus Statue">Sisyphus Statue</option>
+            <option value="Underwater City">Underwater City</option>
+            <option value="Tropical Grove">Tropical Grove</option>
+          </select>
+          <input type="text" id="locCustomInput" placeholder="Atau ketik lokasi..." style="width:135px;padding:3px 7px;font-size:11px;" />
+          <button type="button" id="btnSavePlayerLoc" class="btn-resume" style="padding:3px 9px;font-size:11px;">Simpan Lokasi</button>
+          <button type="button" id="btnSetServerOn" class="btn-start" style="padding:3px 9px;font-size:11px;">Set ON</button>
+          <button type="button" id="btnSetServerOff" class="btn-reset" style="padding:3px 9px;font-size:11px;">Set OFF</button>
+        </div>
       </div>
 
       <div class="podium-section">
@@ -836,37 +861,36 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
   <script>
-    // GANTI NILAI DI BAWAH INI DENGAN CONFIG FIREBASE KAMU
     const firebaseConfig = {
-  apiKey: "AIzaSyCxGtuZJua000jKUKpXa-_0Z8AWVfs_MOQ",
-  authDomain: "galtam-fishit.firebaseapp.com",
-  databaseURL: "https://galtam-fishit-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "galtam-fishit",
-  storageBucket: "galtam-fishit.firebasestorage.app",
-  messagingSenderId: "260932450635",
-  appId: "1:260932450635:web:2374e63ab9469865b050ce",
-  measurementId: "G-P0848XMX1E"
-};
+      apiKey: "AIzaSyCxGtuZJua000jKUKpXa-_0Z8AWVfs_MOQ",
+      authDomain: "galtam-fishit.firebaseapp.com",
+      databaseURL: "https://galtam-fishit-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "galtam-fishit",
+      storageBucket: "galtam-fishit.firebasestorage.app",
+      messagingSenderId: "260932450635",
+      appId: "1:260932450635:web:2374e63ab9469865b050ce",
+      measurementId: "G-P0848XMX1E"
+    };
 
-let db = null;
-  let firebaseReady = false;
-  try {
-    const apiKeyStr = String(firebaseConfig.apiKey || "").trim();
-    const dbUrlStr = String(firebaseConfig.databaseURL || "").trim();
-    const isValidConfig =
-      apiKeyStr.length > 10 &&
-      !apiKeyStr.includes("API_KEY_KAMU") &&
-      dbUrlStr.startsWith("https://") &&
-      !dbUrlStr.includes("PROJECT_ID_KAMU");
+    let db = null;
+    let firebaseReady = false;
+    try {
+      const apiKeyStr = String(firebaseConfig.apiKey || "").trim();
+      const dbUrlStr = String(firebaseConfig.databaseURL || "").trim();
+      const isValidConfig =
+        apiKeyStr.length > 10 &&
+        !apiKeyStr.includes("API_KEY_KAMU") &&
+        dbUrlStr.startsWith("https://") &&
+        !dbUrlStr.includes("PROJECT_ID_KAMU");
 
-    if (isValidConfig) {
-      firebase.initializeApp(firebaseConfig);
-      db = firebase.database();
-      firebaseReady = true;
+      if (isValidConfig) {
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.database();
+        firebaseReady = true;
+      }
+    } catch (err) {
+      console.error("[Firebase Init Error]", err);
     }
-  } catch (err) {
-    console.error("[Firebase Init Error]", err);
-  }
 
     function safeSetDb(path, data) {
       if (!firebaseReady || !db) return;
@@ -1378,11 +1402,21 @@ let db = null;
       document.getElementById("grandFinale").classList.remove("show");
     };
 
-    function getServerStatus(playerName) {
+    function getServerStatus(seatOrName) {
+      const seatObj = typeof seatOrName === "object" && seatOrName !== null ? seatOrName : null;
+      const playerName = seatObj ? seatObj.displayName : seatOrName;
       const k = String(playerName || "").trim().toLowerCase();
       const info = serverPlayersMap[k];
-      if (!info || !info.online) return { inServer: false, location: "" };
-      return { inServer: true, location: info.location || "" };
+
+      const seatOnline = seatObj && typeof seatObj.inServer === "boolean" ? seatObj.inServer : null;
+      const mapOnline = info ? Boolean(info.online || info.inServer) : false;
+      const inServer = seatOnline !== null ? seatOnline : mapOnline;
+
+      const location =
+        (seatObj && seatObj.location ? String(seatObj.location).trim() : "") ||
+        (info && info.location ? String(info.location).trim() : "");
+
+      return { inServer, location };
     }
 
     function render() {
@@ -1462,12 +1496,12 @@ let db = null;
           "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect width='36' height='36' fill='%23e2e8f0'/%3E%3C/svg%3E";
         if (p) avaEl.onclick = () => openProfile(p);
 
-        const srv = p ? getServerStatus(p.displayName) : { inServer: false, location: "" };
+        const srv = p ? getServerStatus(p) : { inServer: false, location: "" };
 
         const metaEl = document.createElement("div");
         metaEl.className = "seat-meta";
         if (p) {
-          const locHtml = srv.inServer && srv.location
+          const locHtml = srv.location
             ? `<span class="loc-emblem">🗺️ ${srv.location}</span>`
             : "";
           metaEl.innerHTML = `
@@ -1560,18 +1594,92 @@ let db = null;
       }
     }
 
+    function buildLocPlayerDropdown() {
+      const dd = document.getElementById("locPlayerDropdown");
+      dd.innerHTML = "";
+      for (let i = 0; i < TOTAL_SEATS; i++) {
+        const p = seatSlots[i];
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "player-opt";
+        if (p) {
+          const srv = getServerStatus(p);
+          const locLabel = srv.location ? ` • ${srv.location}` : "";
+          btn.innerHTML = `<span>#${i + 1} • ${p.displayName}${locLabel}</span><span class="opt-pts">${srv.inServer ? "ON" : "OFF"}</span>`;
+          btn.onclick = () => {
+            document.getElementById("locPlayerInput").value = p.displayName;
+            if (p.location) {
+              document.getElementById("locCustomInput").value = p.location;
+              document.getElementById("locPresetSelect").value = p.location;
+            }
+            dd.classList.remove("open");
+          };
+        } else {
+          btn.innerHTML = `<span style="color:#64748b;">#${i + 1} • Kosong</span><span>-</span>`;
+          btn.disabled = true;
+        }
+        dd.appendChild(btn);
+      }
+    }
+
     document.getElementById("btnPickPlayerArrow").onclick = (e) => {
       e.stopPropagation();
       buildPlayerDropdown();
+      document.getElementById("locPlayerDropdown").classList.remove("open");
       document.getElementById("playerDropdown").classList.toggle("open");
+    };
+
+    document.getElementById("btnPickLocPlayerArrow").onclick = (e) => {
+      e.stopPropagation();
+      buildLocPlayerDropdown();
+      document.getElementById("playerDropdown").classList.remove("open");
+      document.getElementById("locPlayerDropdown").classList.toggle("open");
+    };
+
+    document.getElementById("locPresetSelect").onchange = (e) => {
+      if (e.target.value) {
+        document.getElementById("locCustomInput").value = e.target.value;
+      }
     };
 
     document.addEventListener("click", (e) => {
       const dd = document.getElementById("playerDropdown");
+      const locDd = document.getElementById("locPlayerDropdown");
       if (!dd.contains(e.target) && e.target.id !== "btnPickPlayerArrow") {
         dd.classList.remove("open");
       }
+      if (!locDd.contains(e.target) && e.target.id !== "btnPickLocPlayerArrow") {
+        locDd.classList.remove("open");
+      }
     });
+
+    function findSeatIndexByName(nameRaw) {
+      const target = String(nameRaw || "").trim().toLowerCase();
+      if (!target) return -1;
+      return seatSlots.findIndex((p) => p && String(p.displayName || "").trim().toLowerCase() === target);
+    }
+
+    document.getElementById("btnSavePlayerLoc").onclick = () => {
+      const idx = findSeatIndexByName(document.getElementById("locPlayerInput").value);
+      if (idx === -1) return;
+      const customLoc = document.getElementById("locCustomInput").value.trim();
+      const presetLoc = document.getElementById("locPresetSelect").value.trim();
+      const chosenLoc = customLoc || presetLoc || "";
+      seatSlots[idx].location = chosenLoc;
+      safeSetDb(`galtam/session/seats/${idx}/location`, chosenLoc);
+      render();
+    };
+
+    function setSeatServerState(nextOnline) {
+      const idx = findSeatIndexByName(document.getElementById("locPlayerInput").value);
+      if (idx === -1) return;
+      seatSlots[idx].inServer = Boolean(nextOnline);
+      safeSetDb(`galtam/session/seats/${idx}/inServer`, Boolean(nextOnline));
+      render();
+    }
+
+    document.getElementById("btnSetServerOn").onclick = () => setSeatServerState(true);
+    document.getElementById("btnSetServerOff").onclick = () => setSeatServerState(false);
 
     function adjustManualPoints(delta) {
       const target = document.getElementById("manualPlayer").value.trim().toLowerCase();
@@ -1682,6 +1790,8 @@ let db = null;
         fullBodyUrl: (prof && prof.fullBodyUrl) || (prev && prev.fullBodyUrl) || fallbackAvatarSvg(finalName),
         points: prev ? (Number(prev.points) || 0) : 0,
         catchesCount: prev ? (Number(prev.catchesCount) || 0) : 0,
+        location: prev && prev.location ? prev.location : "",
+        inServer: prev ? Boolean(prev.inServer) : false,
         paid: prev ? (prev.paid || "WAIT") : "WAIT",
         friended: prev ? Boolean(prev.friended) : false
       };
@@ -1694,12 +1804,12 @@ let db = null;
     };
 
     function openProfile(p) {
-      const srv = getServerStatus(p.displayName);
+      const srv = getServerStatus(p);
       document.getElementById("pmName").textContent = p.displayName;
       document.getElementById("pmTiktok").textContent = `TikTok: ${p.tiktokName || "-"}`;
       document.getElementById("pmServerLoc").textContent = srv.inServer
         ? `Di Server • Lokasi: ${srv.location || "-"}`
-        : "Status: Tidak terdeteksi di server";
+        : `Off Server${srv.location ? ` • Terakhir: ${srv.location}` : ""}`;
       document.getElementById("pmBody").src = p.fullBodyUrl || p.avatarUrl || "";
       document.getElementById("profileModal").classList.add("show");
     }
@@ -1799,7 +1909,8 @@ let db = null;
       document.getElementById("popPlayer").textContent = item.player || "-";
       document.getElementById("popFish").textContent = `${item.fish || "-"} • ${item.rarity || ""}`;
       document.getElementById("popPts").textContent = `+${item.points || 0} pts`;
-      document.getElementById("popMeta").textContent = `Weight: ${item.weight || "-"} | Chance: ${item.chance || "-"}`;
+      const locSuffix = item.location ? ` | 📍 ${item.location}` : "";
+      document.getElementById("popMeta").textContent = `Weight: ${item.weight || "-"} | Chance: ${item.chance || "-"}${locSuffix}`;
 
       pop.classList.add("show");
       playTingTingTing();
