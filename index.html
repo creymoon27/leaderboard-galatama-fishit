@@ -1504,7 +1504,7 @@ let db = null;
           payBtn.onclick = () => {
             const nextPaid = p.paid === "OKE" ? "WAIT" : "OKE";
             seatSlots[p.slotIdx].paid = nextPaid;
-            safeSetDb(`galatama/session/seats/${p.slotIdx}/paid`, nextPaid);
+            safeSetDb(`galtam/session/seats/${p.slotIdx}/paid`, nextPaid);
             render();
           };
         }
@@ -1518,7 +1518,7 @@ let db = null;
         if (p) {
           friendChk.onchange = () => {
             seatSlots[p.slotIdx].friended = friendChk.checked;
-            safeSetDb(`galatama/session/seats/${p.slotIdx}/friended`, friendChk.checked);
+            safeSetDb(`galtam/session/seats/${p.slotIdx}/friended`, friendChk.checked);
             render();
           };
         }
@@ -1581,7 +1581,7 @@ let db = null;
       if (idx === -1) return;
       const nextPts = Math.max(0, (Number(seatSlots[idx].points) || 0) + delta * rawVal);
       seatSlots[idx].points = nextPts;
-      safeSetDb(`galatama/session/seats/${idx}/points`, nextPts);
+      safeSetDb(`galtam/session/seats/${idx}/points`, nextPts);
       render();
     }
 
@@ -1594,7 +1594,7 @@ let db = null;
         note: document.getElementById("cfgNote").value.trim() || "X8 - 70 MENIT",
         map: document.getElementById("cfgMap").value.trim() || "Tropical Grove"
       };
-      safeSetDb("galatama/session/meta", sessionMeta);
+      safeSetDb("galtam/session/meta", sessionMeta);
       render();
     };
 
@@ -1608,7 +1608,7 @@ let db = null;
         shiny: Math.max(0, Number(document.getElementById("ptsShiny").value) || 0),
         mutation: Math.max(0, Number(document.getElementById("ptsMutation").value) || 0)
       };
-      safeSetDb("galatama/session/rules", pointRules);
+      safeSetDb("galtam/session/rules", pointRules);
     };
 
     function openSeatModal(idx, existing) {
@@ -1655,7 +1655,7 @@ let db = null;
     document.getElementById("btnRemoveSeat").onclick = () => {
       if (editingIdx === null) return;
       seatSlots[editingIdx] = null;
-      safeRemoveDb(`galatama/session/seats/${editingIdx}`);
+      safeRemoveDb(`galtam/session/seats/${editingIdx}`);
       document.getElementById("seatModal").classList.remove("show");
       render();
     };
@@ -1687,7 +1687,7 @@ let db = null;
       };
 
       seatSlots[editingIdx] = payload;
-      safeSetDb(`galatama/session/seats/${editingIdx}`, payload);
+      safeSetDb(`galtam/session/seats/${editingIdx}`, payload);
       document.getElementById("seatModal").classList.remove("show");
       speakFriendly(`${finalName} terdaftar di kursi ${seatNumber}`);
       render();
@@ -1712,7 +1712,7 @@ let db = null;
         announcedMarks.clear();
         finaleShownForSession = false;
         timerState = { status: "IDLE", durationSec: sec, remainingSec: sec, endTimeMs: 0 };
-        safeSetDb("galatama/session/timer", timerState);
+        safeSetDb("galtam/session/timer", timerState);
         renderClock();
       }
     };
@@ -1727,7 +1727,7 @@ let db = null;
         remainingSec: rem,
         endTimeMs: Date.now() + rem * 1000
       };
-      safeSetDb("galatama/session/timer", timerState);
+      safeSetDb("galtam/session/timer", timerState);
       renderClock();
       triggerStartFullEffect();
       playStartFanfare();
@@ -1738,7 +1738,7 @@ let db = null;
       if (timerState.status === "RUNNING") {
         const rem = computeEffectiveRemaining();
         timerState = { ...timerState, status: "PAUSED", remainingSec: rem, endTimeMs: 0 };
-        safeSetDb("galatama/session/timer", timerState);
+        safeSetDb("galtam/session/timer", timerState);
         renderClock();
       }
     };
@@ -1747,7 +1747,7 @@ let db = null;
       const rem = computeEffectiveRemaining();
       if (rem > 0) {
         timerState = { ...timerState, status: "RUNNING", remainingSec: rem, endTimeMs: Date.now() + rem * 1000 };
-        safeSetDb("galatama/session/timer", timerState);
+        safeSetDb("galtam/session/timer", timerState);
         renderClock();
       }
     };
@@ -1760,7 +1760,7 @@ let db = null;
       document.getElementById("catchPopup").classList.remove("show");
       document.getElementById("grandFinale").classList.remove("show");
       timerState = { status: "IDLE", durationSec: dur, remainingSec: dur, endTimeMs: 0 };
-      safeSetDb("galatama/session/timer", timerState);
+      safeSetDb("galtam/session/timer", timerState);
       renderClock();
     };
 
@@ -1769,8 +1769,8 @@ let db = null;
       prevRankByKey.clear();
       seatSlots = Array.from({ length: TOTAL_SEATS }, () => null);
       totalCatches = 0;
-      safeRemoveDb("galatama/session/seats");
-      safeSetDb("galatama/session/totalCatches", 0);
+      safeRemoveDb("galtam/session/seats");
+      safeSetDb("galtam/session/totalCatches", 0);
       render();
     };
 
@@ -1823,7 +1823,7 @@ let db = null;
     }
 
     if (firebaseReady && db) {
-      db.ref("galatama/session").on("value", (snap) => {
+      db.ref("galtam/session").on("value", (snap) => {
         const val = snap.val() || {};
         if (val.meta) {
           sessionMeta = { ...sessionMeta, ...val.meta };
@@ -1857,7 +1857,7 @@ let db = null;
         if (timerState.status === "FINISHED") openGrandFinale(ranked);
       });
 
-      db.ref("galatama/serverStatus").on("value", (snap) => {
+      db.ref("galtam/serverStatus").on("value", (snap) => {
         const val = snap.val() || {};
         serverPlayersMap = val.players || {};
         if (val.lastSyncText) {
@@ -1866,13 +1866,13 @@ let db = null;
         render();
       });
 
-      db.ref("galatama/activeEvents").on("value", (snap) => {
+      db.ref("galtam/activeEvents").on("value", (snap) => {
         const val = snap.val();
         activeEventsList = Array.isArray(val) ? val : (val ? Object.values(val) : []);
         renderActiveEventsDock();
       });
 
-      db.ref("galatama/catches").limitToLast(1).on("child_added", (snap) => {
+      db.ref("galtam/catches").limitToLast(1).on("child_added", (snap) => {
         const val = snap.val();
         if (!val) return;
         if (lastCatchKeySeen === null) {
@@ -1885,7 +1885,7 @@ let db = null;
         enqueueCatchItem(snap.key, val);
       });
 
-      db.ref("galatama/latestCatch").on("value", (snap) => {
+      db.ref("galtam/latestCatch").on("value", (snap) => {
         const val = snap.val();
         if (!val) return;
         const k = `latest|${val.player || ""}|${val.fish || ""}|${val.points || 0}|${val.timestamp || val.ts || ""}`;
@@ -1906,7 +1906,7 @@ let db = null;
         checkCountdownAlerts(rem);
         if (rem <= 0) {
           timerState = { ...timerState, status: "FINISHED", remainingSec: 0, endTimeMs: 0 };
-          safeSetDb("galatama/session/timer", timerState);
+          safeSetDb("galtam/session/timer", timerState);
           openGrandFinale(render());
         }
       }
