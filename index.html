@@ -194,7 +194,7 @@
       position: absolute;
       left: 0;
       top: calc(100% + 5px);
-      width: 250px;
+      width: 260px;
       max-height: 240px;
       overflow-y: auto;
       background: #141826;
@@ -785,7 +785,7 @@
   <div class="bottom-zone">
     <div class="wrap">
       <div class="board-meta-top">
-        <span id="serverSyncInfo">Server Update: Menunggu bot...</span>
+        <span id="serverSyncInfo">Server Update: Kontrol Manual</span>
         <div id="activeEventsDock" class="active-events-dock" title="Event Aktif (Maks. 5 Logo)"></div>
         <span id="catchSummary">0 Tangkapan</span>
       </div>
@@ -955,7 +955,6 @@
     };
 
     let activeEventsList = [];
-    let serverPlayersMap = {};
     let seatSlots = Array.from({ length: TOTAL_SEATS }, () => null);
     let sessionMeta = { htm: "R10", note: "X8 - 70 MENIT", map: "Tropical Grove" };
     let pointRules = { legendary: 1, mythical: 2, secret: 5, forgottens: 10, big: 1, shiny: 1, mutation: 2 };
@@ -969,10 +968,14 @@
     let announcedMarks = new Set();
     let startOverlayTimer = null;
     let finaleShownForSession = false;
-    let lastCatchKeySeen = null;
-    let processedCatchIds = new Set();
+
+    let catchesChildAddedInitialized = false;
+    let processedCatchKeys = new Set();
+    let recentCatchFingerprints = new Map();
     let catchQueue = [];
     let isShowingCatch = false;
+    let popupHideTimer = null;
+    let popupNextTimer = null;
 
     let lockedVoice = null;
     let speechDebounceTimer = null;
@@ -1381,9 +1384,10 @@
       order.forEach((p, idx) => {
         const card = document.createElement("div");
         card.className = `finale-card${idx === 1 ? " f1" : ""}`;
+        const safeSvg = p ? fallbackAvatarSvg(p.displayName).replace(/'/g, "&#39;") : "";
         card.innerHTML = `
           <div style="font-weight:900;font-size:12px;color:#fde047;">${labels[idx]}</div>
-          ${p && p.fullBodyUrl ? `<img src="${p.fullBodyUrl}" alt="${p.displayName}" />` : `<div style="height:150px;display:flex;align-items:center;justify-content:center;color:#64748b;">-</div>`}
+          ${p && p.fullBodyUrl ? `<img src="${p.fullBodyUrl}" alt="${p.displayName}" onerror="this.onerror=null;this.src='${safeSvg}';" />` : `<div style="height:150px;display:flex;align-items:center;justify-content:center;color:#64748b;">-</div>`}
           <div style="font-size:17px;font-weight:900;">${p ? p.displayName : "-"}</div>
           <div style="font-size:12px;color:#cbd5e1;">TikTok: ${p && p.tiktokName ? p.tiktokName : "-"}</div>
           <div style="font-size:19px;font-weight:900;color:#4ade80;margin-top:4px;">${p ? p.points : 0} pts</div>
@@ -1402,20 +1406,10 @@
       document.getElementById("grandFinale").classList.remove("show");
     };
 
-    function getServerStatus(seatOrName) {
-      const seatObj = typeof seatOrName === "object" && seatOrName !== null ? seatOrName : null;
-      const playerName = seatObj ? seatObj.displayName : seatOrName;
-      const k = String(playerName || "").trim().toLowerCase();
-      const info = serverPlayersMap[k];
-
-      const seatOnline = seatObj && typeof seatObj.inServer === "boolean" ? seatObj.inServer : null;
-      const mapOnline = info ? Boolean(info.online || info.inServer) : false;
-      const inServer = seatOnline !== null ? seatOnline : mapOnline;
-
-      const location =
-        (seatObj && seatObj.location ? String(seatObj.location).trim() : "") ||
-        (info && info.location ? String(info.location).trim() : "");
-
+    function getSeatServerMeta(seatObj) {
+      if (!seatObj) return { inServer: false, location: "" };
+      const inServer = Boolean(seatObj.inServer);
+      const location = seatObj.location ? String(seatObj.location).trim() : "";
       return { inServer, location };
     }
 
@@ -1453,6 +1447,10 @@
         card.querySelector(".pod-tt").textContent = `TikTok: ${p && p.tiktokName ? p.tiktokName : "-"}`;
         card.querySelector(".pod-pts").textContent = `${p ? (Number(p.points) || 0) : 0} pts`;
         if (p && (p.fullBodyUrl || p.avatarUrl)) {
+          img.onerror = () => {
+            img.onerror = null;
+            img.src = fallbackAvatarSvg(p.displayName);
+          };
           img.src = p.fullBodyUrl || p.avatarUrl;
           img.style.display = "block";
           img.onclick = () => openProfile(p);
@@ -1492,11 +1490,18 @@
 
         const avaEl = document.createElement("img");
         avaEl.className = "seat-ava";
-        avaEl.src = (p && (p.avatarUrl || p.fullBodyUrl)) ||
-          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect width='36' height='36' fill='%23e2e8f0'/%3E%3C/svg%3E";
-        if (p) avaEl.onclick = () => openProfile(p);
+        if (p) {
+          avaEl.onerror = () => {
+            avaEl.onerror = null;
+            avaEl.src = fallbackAvatarSvg(p.displayName);
+          };
+          avaEl.src = p.avatarUrl || p.fullBodyUrl || fallbackAvatarSvg(p.displayName);
+          avaEl.onclick = () => openProfile(p);
+        } else {
+          avaEl.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect width='36' height='36' fill='%23e2e8f0'/%3E%3C/svg%3E";
+        }
 
-        const srv = p ? getServerStatus(p) : { inServer: false, location: "" };
+        const srv = p ? getSeatServerMeta(p) : { inServer: false, location: "" };
 
         const metaEl = document.createElement("div");
         metaEl.className = "seat-meta";
@@ -1515,9 +1520,20 @@
           metaEl.innerHTML = `<div class="seat-name seat-empty">Kosong</div>`;
         }
 
-        const srvBadge = document.createElement("span");
+        const srvBadge = document.createElement("button");
+        srvBadge.type = "button";
         srvBadge.className = `srv-badge ${p && srv.inServer ? "srv-online" : "srv-offline"}`;
         srvBadge.textContent = p && srv.inServer ? "Di Server" : "Off Server";
+        srvBadge.disabled = !p;
+        srvBadge.title = p ? "Klik untuk toggle status In Server (ON/OFF)" : "";
+        if (p) {
+          srvBadge.onclick = () => {
+            const nextOnline = !Boolean(seatSlots[p.slotIdx].inServer);
+            seatSlots[p.slotIdx].inServer = nextOnline;
+            safeSetDb(`galtam/session/seats/${p.slotIdx}/inServer`, nextOnline);
+            render();
+          };
+        }
 
         const targetSlotIndex = p ? p.slotIdx : seatSlots.findIndex((s) => !s);
 
@@ -1603,7 +1619,7 @@
         btn.type = "button";
         btn.className = "player-opt";
         if (p) {
-          const srv = getServerStatus(p);
+          const srv = getSeatServerMeta(p);
           const locLabel = srv.location ? ` • ${srv.location}` : "";
           btn.innerHTML = `<span>#${i + 1} • ${p.displayName}${locLabel}</span><span class="opt-pts">${srv.inServer ? "ON" : "OFF"}</span>`;
           btn.onclick = () => {
@@ -1804,13 +1820,18 @@
     };
 
     function openProfile(p) {
-      const srv = getServerStatus(p);
+      const srv = getSeatServerMeta(p);
       document.getElementById("pmName").textContent = p.displayName;
       document.getElementById("pmTiktok").textContent = `TikTok: ${p.tiktokName || "-"}`;
       document.getElementById("pmServerLoc").textContent = srv.inServer
         ? `Di Server • Lokasi: ${srv.location || "-"}`
         : `Off Server${srv.location ? ` • Terakhir: ${srv.location}` : ""}`;
-      document.getElementById("pmBody").src = p.fullBodyUrl || p.avatarUrl || "";
+      const bodyImg = document.getElementById("pmBody");
+      bodyImg.onerror = () => {
+        bodyImg.onerror = null;
+        bodyImg.src = fallbackAvatarSvg(p.displayName);
+      };
+      bodyImg.src = p.fullBodyUrl || p.avatarUrl || fallbackAvatarSvg(p.displayName);
       document.getElementById("profileModal").classList.add("show");
     }
     document.getElementById("pmClose").onclick = () => document.getElementById("profileModal").classList.remove("show");
@@ -1867,6 +1888,10 @@
       announcedMarks.clear();
       lastTop1Key = "";
       finaleShownForSession = false;
+      clearTimeout(popupHideTimer);
+      clearTimeout(popupNextTimer);
+      catchQueue = [];
+      isShowingCatch = false;
       document.getElementById("catchPopup").classList.remove("show");
       document.getElementById("grandFinale").classList.remove("show");
       timerState = { status: "IDLE", durationSec: dur, remainingSec: dur, endTimeMs: 0 };
@@ -1898,10 +1923,20 @@
       isShowingCatch = true;
       const item = catchQueue.shift();
 
+      clearTimeout(popupHideTimer);
+      clearTimeout(popupNextTimer);
+
       const pop = document.getElementById("catchPopup");
       const imgBox = document.getElementById("popImgBox");
       if (item.imageUrl) {
-        imgBox.innerHTML = `<img src="${item.imageUrl}" alt="Fish" />`;
+        const img = document.createElement("img");
+        img.alt = "Fish";
+        img.onerror = () => {
+          imgBox.textContent = "🐟";
+        };
+        img.src = item.imageUrl;
+        imgBox.innerHTML = "";
+        imgBox.appendChild(img);
       } else {
         imgBox.textContent = "🐟";
       }
@@ -1915,9 +1950,9 @@
       pop.classList.add("show");
       playTingTingTing();
 
-      setTimeout(() => {
+      popupHideTimer = setTimeout(() => {
         pop.classList.remove("show");
-        setTimeout(() => {
+        popupNextTimer = setTimeout(() => {
           isShowingCatch = false;
           processCatchQueue();
         }, 250);
@@ -1926,9 +1961,25 @@
 
     function enqueueCatchItem(key, val) {
       if (!val || typeof val !== "object") return;
-      const dedupKey = key || `${val.player || ""}|${val.fish || ""}|${val.timestamp || val.ts || Date.now()}`;
-      if (processedCatchIds.has(dedupKey)) return;
-      processedCatchIds.add(dedupKey);
+      if (key && processedCatchKeys.has(key)) return;
+      if (key) {
+        processedCatchKeys.add(key);
+        if (processedCatchKeys.size > 300) {
+          const first = processedCatchKeys.values().next().value;
+          processedCatchKeys.delete(first);
+        }
+      }
+
+      const now = Date.now();
+      for (const [fp, seenAt] of recentCatchFingerprints.entries()) {
+        if (now - seenAt > 12000) recentCatchFingerprints.delete(fp);
+      }
+
+      const fp = `${String(val.player || "").toLowerCase()}|${String(val.fish || "").toLowerCase()}|${String(val.rarity || "").toLowerCase()}|${Number(val.points) || 0}|${String(val.weight || "")}|${String(val.chance || "")}`;
+      if (recentCatchFingerprints.has(fp)) return;
+      recentCatchFingerprints.set(fp, now);
+
+      if (catchQueue.length >= 12) catchQueue.shift();
       catchQueue.push(val);
       processCatchQueue();
     }
@@ -1968,15 +2019,6 @@
         if (timerState.status === "FINISHED") openGrandFinale(ranked);
       });
 
-      db.ref("galtam/serverStatus").on("value", (snap) => {
-        const val = snap.val() || {};
-        serverPlayersMap = val.players || {};
-        if (val.lastSyncText) {
-          document.getElementById("serverSyncInfo").textContent = val.lastSyncText;
-        }
-        render();
-      });
-
       db.ref("galtam/activeEvents").on("value", (snap) => {
         const val = snap.val();
         activeEventsList = Array.isArray(val) ? val : (val ? Object.values(val) : []);
@@ -1986,26 +2028,12 @@
       db.ref("galtam/catches").limitToLast(1).on("child_added", (snap) => {
         const val = snap.val();
         if (!val) return;
-        if (lastCatchKeySeen === null) {
-          lastCatchKeySeen = snap.key;
-          if (snap.key) processedCatchIds.add(snap.key);
+        if (!catchesChildAddedInitialized) {
+          catchesChildAddedInitialized = true;
+          if (snap.key) processedCatchKeys.add(snap.key);
           return;
         }
-        if (snap.key === lastCatchKeySeen) return;
-        lastCatchKeySeen = snap.key;
         enqueueCatchItem(snap.key, val);
-      });
-
-      db.ref("galtam/latestCatch").on("value", (snap) => {
-        const val = snap.val();
-        if (!val) return;
-        const k = `latest|${val.player || ""}|${val.fish || ""}|${val.points || 0}|${val.timestamp || val.ts || ""}`;
-        if (!processedCatchIds.has("latest_init")) {
-          processedCatchIds.add("latest_init");
-          processedCatchIds.add(k);
-          return;
-        }
-        enqueueCatchItem(k, val);
       });
     }
 
