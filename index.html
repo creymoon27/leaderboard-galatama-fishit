@@ -1146,150 +1146,78 @@
       }
     }
 
-    function extractRobloxUserFromPayload(payload, fallbackUsername) {
-      if (!payload) return null;
-      const list = Array.isArray(payload.data) ? payload.data : (Array.isArray(payload) ? payload : []);
-      const u = list[0];
-      if (!u || !u.id) return null;
-      return {
-        id: u.id,
-        name: u.name || u.username || fallbackUsername,
-        displayName: u.displayName || u.name || u.username || fallbackUsername
-      };
-    }
-
-    async function resolveRobloxUserId(username) {
-      const clean = String(username || "").trim();
-      if (!clean) return null;
-
-      // 1. users.roproxy.com
-      try {
-        const d1 = await fetchJsonSafe("https://users.roproxy.com/v1/usernames/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Accept": "application/json" },
-          body: JSON.stringify({ usernames: [clean], excludeBannedUsers: false })
-        }, 5500);
-        const u1 = extractRobloxUserFromPayload(d1, clean);
-        if (u1) return u1;
-      } catch (_) {}
-
-      // 2. Proxy POST ke users.roblox.com
-      const targetUrl = encodeURIComponent("https://users.roblox.com/v1/usernames/users");
-      const postProxies = [
-        `https://corsproxy.io/?${targetUrl}`,
-        `https://api.allorigins.win/raw?url=${targetUrl}`
-      ];
-
-      for (const pUrl of postProxies) {
-        try {
-          const d2 = await fetchJsonSafe(pUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Accept": "application/json" },
-            body: JSON.stringify({ usernames: [clean], excludeBannedUsers: false })
-          }, 6000);
-          const u2 = extractRobloxUserFromPayload(d2, clean);
-          if (u2) return u2;
-        } catch (_) {}
-      }
-
-      // 3. Fallback GET search lewat proxy
-      const searchUrl = encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(clean)}&limit=10`);
-      for (const sProxy of [
-        `https://api.allorigins.win/raw?url=${searchUrl}`,
-        `https://corsproxy.io/?${searchUrl}`
-      ]) {
-        try {
-          const d3 = await fetchJsonSafe(sProxy, {}, 6000);
-          const list = Array.isArray(d3 && d3.data) ? d3.data : [];
-          const exact = list.find((item) =>
-            String(item.name || "").toLowerCase() === clean.toLowerCase() ||
-            String(item.displayName || "").toLowerCase() === clean.toLowerCase()
-          ) || list[0];
-          if (exact && exact.id) {
-            return {
-              id: exact.id,
-              name: exact.name || clean,
-              displayName: exact.displayName || exact.name || clean
-            };
-          }
-        } catch (_) {}
-      }
-
-      return null;
-    }
-
-    async function resolveRobloxThumbnails(userId, fallbackLabel) {
-      let headUrl = fallbackAvatarSvg(fallbackLabel);
-      let bodyUrl = fallbackAvatarSvg(fallbackLabel);
-
-      try {
-        const [hJson, bJson] = await Promise.all([
-          fetchJsonSafe(
-            `https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`,
-            { headers: { "Accept": "application/json" } },
-            5500
-          ).catch(() => null),
-          fetchJsonSafe(
-            `https://thumbnails.roproxy.com/v1/users/avatar?userIds=${userId}&size=352x352&format=Png&isCircular=false`,
-            { headers: { "Accept": "application/json" } },
-            5500
-          ).catch(() => null)
-        ]);
-
-        const candHead = hJson && hJson.data && hJson.data[0] && hJson.data[0].imageUrl;
-        const candBody = bJson && bJson.data && bJson.data[0] && bJson.data[0].imageUrl;
-
-        if (candHead) headUrl = candHead;
-        if (candBody) bodyUrl = candBody;
-      } catch (_) {}
-
-      if (bodyUrl.startsWith("data:")) {
-        const rbxBodyApi = encodeURIComponent(
-          `https://thumbnails.roblox.com/v1/users/avatar?userIds=${userId}&size=352x352&format=Png&isCircular=false`
-        );
-        for (const pUrl of [
-          `https://corsproxy.io/?${rbxBodyApi}`,
-          `https://api.allorigins.win/raw?url=${rbxBodyApi}`
-        ]) {
-          try {
-            const bAlt = await fetchJsonSafe(pUrl, {}, 6000);
-            const candAlt = bAlt && bAlt.data && bAlt.data[0] && bAlt.data[0].imageUrl;
-            if (candAlt) {
-              bodyUrl = candAlt;
-              if (headUrl.startsWith("data:")) headUrl = candAlt;
-              break;
-            }
-          } catch (_) {}
-        }
-      }
-
-      return { headUrl, bodyUrl };
-    }
-
-    // Selalu cari langsung ke jaringan agar player baru selalu terdeteksi
+    // Lookup langsung via Netlify Function (/api/roblox-lookup) agar bebas blokir CORS & 403 proxy publik
     async function lookupRobloxProfile(username) {
       const clean = String(username || "").trim();
       if (!clean) return null;
 
-      const foundUser = await resolveRobloxUserId(clean);
-      if (!foundUser) {
-        return {
-          username: clean,
-          displayName: clean,
-          avatarUrl: fallbackAvatarSvg(clean),
-          fullBodyUrl: fallbackAvatarSvg(clean),
-          found: false
-        };
-      }
+      try {
+        const data = await fetchJsonSafe(
+          `/.netlify/functions/roblox-lookup?username=${encodeURIComponent(clean)}`,
+          { headers: { "Accept": "application/json" } },
+          7000
+        );
+        if (data && data.found) {
+          return {
+            userId: data.userId,
+            username: data.username || clean,
+            displayName: data.displayName || data.username || clean,
+            avatarUrl: data.avatarUrl || fallbackAvatarSvg(clean),
+            fullBodyUrl: data.fullBodyUrl || data.avatarUrl || fallbackAvatarSvg(clean),
+            found: true
+          };
+        }
+      } catch (_) {}
 
-      const thumbs = await resolveRobloxThumbnails(foundUser.id, foundUser.name);
+      // Fallback GET lewat allorigins jika dijalankan tanpa Netlify Function
+      try {
+        const searchUrl = encodeURIComponent(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(clean)}&limit=10`);
+        const d3 = await fetchJsonSafe(`https://api.allorigins.win/raw?url=${searchUrl}`, {}, 6500);
+        const list = Array.isArray(d3 && d3.data) ? d3.data : [];
+        const exact = list.find((item) =>
+          String(item.name || "").toLowerCase() === clean.toLowerCase() ||
+          String(item.displayName || "").toLowerCase() === clean.toLowerCase()
+        ) || list[0];
+
+        if (exact && exact.id) {
+          let headUrl = fallbackAvatarSvg(exact.name || clean);
+          let bodyUrl = fallbackAvatarSvg(exact.name || clean);
+          try {
+            const [hJson, bJson] = await Promise.all([
+              fetchJsonSafe(
+                `https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${exact.id}&size=150x150&format=Png&isCircular=false`,
+                {},
+                5500
+              ).catch(() => null),
+              fetchJsonSafe(
+                `https://thumbnails.roproxy.com/v1/users/avatar?userIds=${exact.id}&size=352x352&format=Png&isCircular=false`,
+                {},
+                5500
+              ).catch(() => null)
+            ]);
+            const ch = hJson && hJson.data && hJson.data[0] && hJson.data[0].imageUrl;
+            const cb = bJson && bJson.data && bJson.data[0] && bJson.data[0].imageUrl;
+            if (ch) headUrl = ch;
+            if (cb) bodyUrl = cb;
+          } catch (_) {}
+
+          return {
+            userId: exact.id,
+            username: exact.name || clean,
+            displayName: exact.displayName || exact.name || clean,
+            avatarUrl: headUrl,
+            fullBodyUrl: bodyUrl,
+            found: true
+          };
+        }
+      } catch (_) {}
+
       return {
-        userId: foundUser.id,
-        username: foundUser.name,
-        displayName: foundUser.displayName,
-        avatarUrl: thumbs.headUrl,
-        fullBodyUrl: thumbs.bodyUrl,
-        found: true
+        username: clean,
+        displayName: clean,
+        avatarUrl: fallbackAvatarSvg(clean),
+        fullBodyUrl: fallbackAvatarSvg(clean),
+        found: false
       };
     }
 
