@@ -694,7 +694,7 @@
       </div>
 
       <div class="config-toggle-row">
-        <span id="fbSyncBadge" class="sync-pill">Mode Lokal (Cek Config Firebase)</span>
+        <span id="fbSyncBadge" class="sync-pill">Mode Lokal (Aktif)</span>
         <button type="button" id="btnToggleConfig">Pengaturan (Opsional)</button>
       </div>
 
@@ -847,40 +847,37 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
   <script>
+    // Opsional: isi jika ingin sinkron ke Firebase Realtime Database
     const firebaseConfig = {
-      apiKey: "API_KEY_KAMU",
-      authDomain: "PROJECT_ID_KAMU.firebaseapp.com",
-      databaseURL: "https://PROJECT_ID_KAMU-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "PROJECT_ID_KAMU",
-      storageBucket: "PROJECT_ID_KAMU.appspot.com",
-      messagingSenderId: "SENDER_ID_KAMU",
-      appId: "APP_ID_KAMU"
+      apiKey: "",
+      authDomain: "",
+      databaseURL: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
     };
 
     let db = null;
     let firebaseReady = false;
     try {
-      const hasPlaceholder = String(firebaseConfig.apiKey || "").includes("API_KEY_KAMU") ||
-        String(firebaseConfig.databaseURL || "").includes("PROJECT_ID_KAMU");
-      if (!hasPlaceholder) {
+      if (firebaseConfig.apiKey && firebaseConfig.databaseURL && typeof firebase !== "undefined") {
         firebase.initializeApp(firebaseConfig);
         db = firebase.database();
         firebaseReady = true;
       }
-    } catch (_) {}
+    } catch (_) {
+      firebaseReady = false;
+    }
 
     function safeSetDb(path, data) {
       if (!firebaseReady || !db) return;
-      try {
-        db.ref(path).set(data).catch(() => {});
-      } catch (_) {}
+      try { db.ref(path).set(data).catch(() => {}); } catch (_) {}
     }
 
     function safeRemoveDb(path) {
       if (!firebaseReady || !db) return;
-      try {
-        db.ref(path).remove().catch(() => {});
-      } catch (_) {}
+      try { db.ref(path).remove().catch(() => {}); } catch (_) {}
     }
 
     const TOTAL_SEATS = 19;
@@ -965,18 +962,14 @@
 
       const isMaleOrRobot = (v) =>
         /\b(male|man|david|mark|daniel|arthur|fred|alex|jorge|diego|robot|whisper|ravi)\b/i.test(`${v.name} ${v.voiceURI}`);
-
       const femaleHints = /\b(female|woman|girl|zira|aria|samantha|victoria|hazel|susan|lina|ayu|damayanti|google indonesia|indonesia)\b/i;
 
       const idFemale = voices.find((v) => /id/i.test(v.lang) && femaleHints.test(v.name) && !isMaleOrRobot(v));
       if (idFemale) return idFemale;
-
       const idAnyNonMale = voices.find((v) => /id/i.test(v.lang) && !isMaleOrRobot(v));
       if (idAnyNonMale) return idAnyNonMale;
-
       const anyFriendlyFemale = voices.find((v) => femaleHints.test(v.name) && !isMaleOrRobot(v));
       if (anyFriendlyFemale) return anyFriendlyFemale;
-
       const anyNonMale = voices.find((v) => !isMaleOrRobot(v));
       return anyNonMale || voices[0] || null;
     }
@@ -1129,26 +1122,7 @@
       );
     }
 
-    function testImageUrl(url, timeoutMs = 3200) {
-      return new Promise((resolve) => {
-        if (!url || url.startsWith("data:")) return resolve(false);
-        const img = new Image();
-        let done = false;
-        const finish = (ok) => {
-          if (!done) {
-            done = true;
-            clearTimeout(t);
-            resolve(ok);
-          }
-        };
-        const t = setTimeout(() => finish(false), timeoutMs);
-        img.onload = () => finish(img.naturalWidth > 0);
-        img.onerror = () => finish(false);
-        img.src = url;
-      });
-    }
-
-    async function fetchJsonSafe(url, options = {}, timeoutMs = 4200) {
+    async function fetchJsonSafe(url, options = {}, timeoutMs = 3000) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -1166,7 +1140,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ usernames: [username], excludeBannedUsers: false })
-        }, 3800);
+        }, 2800);
         if (d1 && d1.data && d1.data[0] && d1.data[0].id) {
           return {
             id: d1.data[0].id,
@@ -1188,7 +1162,7 @@
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ usernames: [username], excludeBannedUsers: false })
-          }, 4200);
+          }, 3000);
           if (d2 && d2.data && d2.data[0] && d2.data[0].id) {
             return {
               id: d2.data[0].id,
@@ -1208,29 +1182,12 @@
 
       try {
         const [hJson, bJson] = await Promise.all([
-          fetchJsonSafe(`https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`, {}, 3800),
-          fetchJsonSafe(`https://thumbnails.roproxy.com/v1/users/avatar?userIds=${userId}&size=352x352&format=Png&isCircular=false`, {}, 3800)
+          fetchJsonSafe(`https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`, {}, 2800),
+          fetchJsonSafe(`https://thumbnails.roproxy.com/v1/users/avatar?userIds=${userId}&size=352x352&format=Png&isCircular=false`, {}, 2800)
         ]);
-        const candHead = hJson && hJson.data && hJson.data[0] && hJson.data[0].imageUrl;
-        const candBody = bJson && bJson.data && bJson.data[0] && bJson.data[0].imageUrl;
-
-        if (candHead && await testImageUrl(candHead)) headUrl = candHead;
-        if (candBody && await testImageUrl(candBody)) bodyUrl = candBody;
+        if (hJson && hJson.data && hJson.data[0] && hJson.data[0].imageUrl) headUrl = hJson.data[0].imageUrl;
+        if (bJson && bJson.data && bJson.data[0] && bJson.data[0].imageUrl) bodyUrl = bJson.data[0].imageUrl;
       } catch (_) {}
-
-      if (bodyUrl.startsWith("data:")) {
-        try {
-          const rbxThumbUrl = encodeURIComponent(
-            `https://thumbnails.roblox.com/v1/users/avatar?userIds=${userId}&size=352x352&format=Png&isCircular=false`
-          );
-          const bFallback = await fetchJsonSafe(`https://corsproxy.io/?${rbxThumbUrl}`, {}, 4000);
-          const cand = bFallback && bFallback.data && bFallback.data[0] && bFallback.data[0].imageUrl;
-          if (cand && await testImageUrl(cand)) {
-            bodyUrl = cand;
-            if (headUrl.startsWith("data:")) headUrl = cand;
-          }
-        } catch (_) {}
-      }
 
       return { headUrl, bodyUrl };
     }
@@ -1291,7 +1248,7 @@
       handleEl.textContent = `@${profile.username}`;
       statusEl.textContent = profile.found
         ? "Avatar full body & display name ditemukan"
-        : "Menggunakan nama & avatar bawaan (cek ejaan jika perlu)";
+        : `Siap disimpan sebagai "${profile.displayName}"`;
     }
 
     document.getElementById("inUsn").addEventListener("input", (e) => {
@@ -1302,7 +1259,15 @@
         renderLiveRobloxPreview(null, false);
         return;
       }
+      livePickedRobloxProfile = {
+        username: val,
+        displayName: val,
+        avatarUrl: fallbackAvatarSvg(val),
+        fullBodyUrl: fallbackAvatarSvg(val),
+        found: false
+      };
       renderLiveRobloxPreview(livePickedRobloxProfile, true);
+
       rbxLookupTimer = setTimeout(async () => {
         const currentVal = document.getElementById("inUsn").value.trim();
         if (currentVal !== val) return;
@@ -1311,7 +1276,7 @@
           livePickedRobloxProfile = prof;
           renderLiveRobloxPreview(prof, false);
         }
-      }, 320);
+      }, 280);
     });
 
     function renderActiveEventsDock() {
@@ -1500,8 +1465,7 @@
 
         const avaEl = document.createElement("img");
         avaEl.className = "seat-ava";
-        avaEl.src = (p && (p.avatarUrl || p.fullBodyUrl)) ||
-          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect width='36' height='36' fill='%23e2e8f0'/%3E%3C/svg%3E";
+        avaEl.src = (p && (p.avatarUrl || p.fullBodyUrl)) || fallbackAvatarSvg(" ");
         if (p) avaEl.onclick = () => openProfile(p);
 
         const srv = p ? getServerStatus(p.displayName) : { inServer: false, location: "" };
@@ -1618,7 +1582,7 @@
     function adjustManualPoints(delta) {
       const target = document.getElementById("manualPlayer").value.trim().toLowerCase();
       const rawVal = Math.abs(Number(document.getElementById("manualPts").value) || 0);
-      if (!target || !rawVal || !seatSlots[0]) return;
+      if (!target || !rawVal) return;
       const idx = seatSlots.findIndex((p) => p && String(p.displayName || "").toLowerCase() === target);
       if (idx === -1) return;
       const nextPts = Math.max(0, (Number(seatSlots[idx].points) || 0) + delta * rawVal);
@@ -1660,29 +1624,22 @@
       document.getElementById("inUsn").value = (existing && existing.displayName) || "";
       document.getElementById("btnRemoveSeat").style.display = existing ? "inline-block" : "none";
 
-      if (existing && (existing.fullBodyUrl || existing.avatarUrl)) {
+      if (existing) {
         livePickedRobloxProfile = {
           username: existing.displayName,
           displayName: existing.displayName,
-          avatarUrl: existing.avatarUrl,
-          fullBodyUrl: existing.fullBodyUrl || existing.avatarUrl,
+          avatarUrl: existing.avatarUrl || fallbackAvatarSvg(existing.displayName),
+          fullBodyUrl: existing.fullBodyUrl || existing.avatarUrl || fallbackAvatarSvg(existing.displayName),
           found: true
         };
         renderLiveRobloxPreview(livePickedRobloxProfile, false);
       } else {
         livePickedRobloxProfile = null;
         renderLiveRobloxPreview(null, false);
-        const initUsn = (existing && existing.displayName) || "";
-        if (initUsn.length >= 2) {
-          renderLiveRobloxPreview(null, true);
-          lookupRobloxProfile(initUsn).then((prof) => {
-            livePickedRobloxProfile = prof;
-            renderLiveRobloxPreview(prof, false);
-          });
-        }
       }
 
       document.getElementById("seatModal").classList.add("show");
+      document.getElementById("inTiktok").focus();
     }
 
     document.getElementById("btnCloseSeatModal").onclick = () => {
@@ -1698,7 +1655,7 @@
       render();
     };
 
-    document.getElementById("btnSaveSeatModal").onclick = async () => {
+    document.getElementById("btnSaveSeatModal").onclick = () => {
       if (editingIdx === null) return;
       const usn = document.getElementById("inUsn").value.trim();
       const tt = document.getElementById("inTiktok").value.trim();
@@ -1706,12 +1663,9 @@
 
       clearTimeout(rbxLookupTimer);
       const prev = seatSlots[editingIdx];
-      let prof = livePickedRobloxProfile;
-      if (usn && (!prof || prof.username.toLowerCase() !== usn.toLowerCase())) {
-        prof = await lookupRobloxProfile(usn);
-      }
-
+      const prof = livePickedRobloxProfile;
       const finalName = (prof && prof.displayName) || usn || tt;
+
       const payload = {
         displayName: finalName,
         tiktokName: tt,
@@ -1855,7 +1809,7 @@
           badge.textContent = "Firebase: Terhubung";
           badge.classList.add("online");
         } else {
-          badge.textContent = "Firebase: Offline / Cek Config";
+          badge.textContent = "Firebase: Offline";
           badge.classList.remove("online");
         }
       });
